@@ -1,0 +1,5 @@
+FROM gcr.io/istio-release/proxyv2:1.22.3-debug
+
+# Install Envoy.
+COPY ./envoy /usr/local/bin/envoy
+RUN chmod 0755 /usr/local/bin/envoy
