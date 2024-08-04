@@ -38,6 +38,7 @@ ISTIO_EXTENSIONS = [
     "//source/extensions/filters/network/metadata_exchange:config_lib",
 
     "//source/extensions/filters/http/ratelimit",
+    "//source/extensions/load_balancing_policies/random",
 ]
 
 envoy_cc_binary(

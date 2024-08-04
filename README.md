@@ -1,3 +1,6 @@
+# How to add custom extensions.
+- Check ISTIO_EXTENSIONS items in ./BUILD
+
 # How to use your Istio proxy with custom Envoy
 ```
 # This builds Envoy binary in an container for building. The binary is copied out to the root dir.
@@ -17,7 +20,12 @@ docker push docker.io/jokerwyt/istio-proxy-1.22:latest
 
 kubectl delete all,sa,pvc,pv,envoyfilters,appnetconfigs --all
 
+# All in one:
+# ./build.sh && sudo docker build -t docker.io/jokerwyt/istio-proxy-1.22:latest -f Dockerfile.istioproxy . && docker push docker.io/jokerwyt/istio-proxy-1.22:latest && kubectl delete all,sa,pvc,pv,envoyfilters,appnetconfigs --all
+
+
 # under appnet root folder
+make run
 kubectl apply -f config/samples/echo/sample_echo_sidecar.yaml
 ```
 
