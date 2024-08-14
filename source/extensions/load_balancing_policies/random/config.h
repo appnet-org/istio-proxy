@@ -6,13 +6,14 @@
 
 #include "source/common/common/logger.h"
 #include "source/extensions/load_balancing_policies/common/factory_base.h"
+#include "source/extensions/load_balancing_policies/random/lbconfig.pb.h"
 
 namespace Envoy {
 namespace Extensions {
 namespace LoadBalancingPolices {
 namespace MyRandom {
 
-using RandomLbProto = envoy::extensions::load_balancing_policies::random::v3::Random;
+using RandomLbProto = envoy::custom::lbconfig;
 
 /**
  * Empty load balancer config that used to represent the config for the random load balancer.
@@ -45,6 +46,8 @@ public:
 
   Upstream::LoadBalancerConfigPtr loadConfig(const Protobuf::Message& config,
                                              ProtobufMessage::ValidationVisitor&) override {
+
+    std::cerr << "=============================================================================================" << std::endl;
     auto typed_config = dynamic_cast<const RandomLbProto*>(&config);
     if (typed_config == nullptr) {
       return std::make_unique<EmptyRandomLbConfig>();

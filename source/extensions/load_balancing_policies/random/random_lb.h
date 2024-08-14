@@ -8,8 +8,7 @@ namespace Upstream {
 /**
  * Random load balancer that picks a random host out of all hosts.
  */
-class MyRandomLoadBalancer 
-  : public ZoneAwareLoadBalancerBase {
+class MyRandomLoadBalancer : public ZoneAwareLoadBalancerBase {
 public:
   MyRandomLoadBalancer(const PrioritySet& priority_set, const PrioritySet* local_priority_set,
                      ClusterLbStats& stats, Runtime::Loader& runtime,
@@ -27,7 +26,11 @@ public:
       const envoy::extensions::load_balancing_policies::random::v3::Random& random_config)
       : ZoneAwareLoadBalancerBase(
             priority_set, local_priority_set, stats, runtime, random, healthy_panic_threshold,
-            LoadBalancerConfigHelper::localityLbConfigFromProto(random_config)) {}
+            LoadBalancerConfigHelper::localityLbConfigFromProto(random_config)) {
+
+
+              ENVOY_LOG(info, "MyRandomLoadBalancer()");
+            }
 
   // Upstream::ZoneAwareLoadBalancerBase
   HostConstSharedPtr chooseHostOnce(LoadBalancerContext* context) override;
