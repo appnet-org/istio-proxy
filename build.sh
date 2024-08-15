@@ -14,6 +14,6 @@ USER_ID=$(id -u)
 GROUP_ID=$(id -g)
 
 # echo the command
-echo "docker run -it -w /work -v ${ISTIO_ENVOY_ROOT}:/work --user ${USER_ID}:${GROUP_ID} gcr.io/istio-testing/build-tools-proxy:${RELEASE} /bin/bash -c \"git config --global --add safe.directory /work && make build_envoy && cp /work/bazel-bin/envoy /work/envoy\""
+echo "docker run -it -w /work -v ${ENVOY_ROOT}:/work --user ${USER_ID}:${GROUP_ID} gcr.io/istio-testing/build-tools-proxy:${RELEASE} /bin/bash -c \"git config --global --add safe.directory /work && make build_envoy && cp /work/bazel-bin/envoy /work/envoy\""
 
-docker run -it -w /work -v ${ISTIO_ENVOY_ROOT}:/work --user ${USER_ID}:${GROUP_ID} gcr.io/istio-testing/build-tools-proxy:${RELEASE} /bin/bash -c "git config --global --add safe.directory /work && make build_envoy && cp /work/bazel-bin/envoy /work/envoy"
+docker run -it -w /work -v ${ENVOY_ROOT}:/work --user ${USER_ID}:${GROUP_ID} gcr.io/istio-testing/build-tools-proxy:${RELEASE} /bin/bash -c "git config --global --add safe.directory /work && make build_envoy && cp /work/bazel-bin/envoy /work/envoy"
