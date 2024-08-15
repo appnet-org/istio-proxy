@@ -36,7 +36,8 @@ ISTIO_EXTENSIONS = [
     "//source/extensions/filters/http/istio_stats",
     "//source/extensions/filters/http/peer_metadata:filter_lib",
     "//source/extensions/filters/network/metadata_exchange:config_lib",
-
+    
+    # !APPNET_FILTERS
     "//source/extensions/filters/http/appnet_filter:appnet_filter_lib",
     "//source/extensions/load_balancing_policies/random:random_lb_lib",
 ]
