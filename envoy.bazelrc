@@ -67,6 +67,12 @@ build:linux --copt=-fPIC
 build:linux --copt=-Wno-deprecated-declarations
 build:linux --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
 build:linux --cxxopt=-fsized-deallocation --host_cxxopt=-fsized-deallocation
+
+build --cxxopt -Wno-error=unused-but-set-variable
+build:linux --cxxopt -Wno-error=unused-but-set-variable
+build:release --cxxopt -Wno-error=unused-but-set-variable
+build:debug --cxxopt -Wno-error=unused-but-set-variable
+
 build:linux --conlyopt=-fexceptions
 build:linux --fission=dbg,opt
 build:linux --features=per_object_debug_info
