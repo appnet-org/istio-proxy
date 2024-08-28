@@ -48,7 +48,9 @@ build:debug -c dbg
 # build --cxxopt -Wnon-virtual-dtor
 build --cxxopt -Wformat 
 build --cxxopt -Wno-error=unused-but-set-variable
+build --cxxopt -Wno-error=unused-private-field
 build --action_env=CXXFLAGS=-Wno-error=unused-variable
+build --action_env=CXXFLAGS=-Wnoerror=unused-private-field
 build:release --cxxopt -Wno-error=unused-but-set-variable
 build:debug --cxxopt -Wno-error=unused-but-set-variable
 build --cxxopt -Wformat-security
