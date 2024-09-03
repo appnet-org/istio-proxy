@@ -29,7 +29,7 @@ public:
             LoadBalancerConfigHelper::localityLbConfigFromProto(random_config)) {
 
 
-              ENVOY_LOG(info, "MyRandomLoadBalancer()");
+              // ENVOY_LOG(info, "MyRandomLoadBalancer()");
             }
 
   // Upstream::ZoneAwareLoadBalancerBase

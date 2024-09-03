@@ -11,12 +11,12 @@ HostConstSharedPtr MyRandomLoadBalancer::peekAnotherHost(LoadBalancerContext* co
   if (tooManyPreconnects(stashed_random_.size(), total_healthy_hosts_)) {
     return nullptr;
   }
-  ENVOY_LOG(info, "peekAnotherHost()");
+  // ENVOY_LOG(info, "peekAnotherHost()");
   return peekOrChoose(context, true);
 }
 
 HostConstSharedPtr MyRandomLoadBalancer::chooseHostOnce(LoadBalancerContext* context) {
-  ENVOY_LOG(info, "chooseHostOnce()");
+  // ENVOY_LOG(info, "chooseHostOnce()");
   return peekOrChoose(context, false);
 }
 
@@ -26,7 +26,7 @@ HostConstSharedPtr MyRandomLoadBalancer::peekOrChoose(LoadBalancerContext* conte
 
   // make sure the header is not null
   if (header == nullptr) {
-    ENVOY_LOG(info, "header is null");
+    // ENVOY_LOG(info, "header is null");
     return nullptr;
   }
 
@@ -34,16 +34,16 @@ HostConstSharedPtr MyRandomLoadBalancer::peekOrChoose(LoadBalancerContext* conte
 
   // make sure header exists
   if (header->get(Http::LowerCaseString("appnet_route_to")).empty()) {
-    ENVOY_LOG(info, "header not found, assume it 0");
+    // ENVOY_LOG(info, "header not found, assume it 0");
     route_to_idx = 0;
   } else {
     auto route_to = header->get(Http::LowerCaseString("appnet_route_to"))[0]->value().getStringView();
     route_to_idx = std::stoi(std::string(route_to));
   }
 
-  ENVOY_LOG(info, "get routing direction from filter: {}", route_to_idx);
+  // ENVOY_LOG(info, "get routing direction from filter: {}", route_to_idx);
 
-  ENVOY_LOG(info, "peekOrChoose()");
+  // ENVOY_LOG(info, "peekOrChoose()");
   uint64_t random_hash = random(peek);
   const absl::optional<HostsSource> hosts_source = hostSourceToUse(context, random_hash);
   if (!hosts_source) {
