@@ -9,11 +9,11 @@
 # Build your own Istio proxy image.
 # Make sure you replace all the same string in appnet proj, if you want to use a new image.
 
-sudo docker build -t docker.io/jokerwyt/istio-proxy-1.22:latest -f Dockerfile.istioproxy .
+sudo docker build -t docker.io/appnetorg/proxyv2:1.22.3-distroless -f Dockerfile.istioproxy .
 
 # Push that image. Docker login if you need.
 
-docker push docker.io/jokerwyt/istio-proxy-1.22:latest
+docker push docker.io/appnetorg/proxyv2:1.22.3-distroless
 
 
 # restart current appnet
@@ -21,7 +21,7 @@ docker push docker.io/jokerwyt/istio-proxy-1.22:latest
 kubectl delete all,sa,pvc,pv,envoyfilters,appnetconfigs --all
 
 # All in one:
-# ./build.sh && sudo docker build -t docker.io/jokerwyt/istio-proxy-1.22:latest -f Dockerfile.istioproxy . && docker push docker.io/jokerwyt/istio-proxy-1.22:latest && kubectl delete all,sa,pvc,pv,envoyfilters,appnetconfigs --all
+# ./build.sh && sudo docker build -t docker.io/appnetorg/proxyv2:1.22.3-distroless -f Dockerfile.istioproxy . && docker push docker.io/appnetorg/proxyv2:1.22.3-distroless && kubectl delete all,sa,pvc,pv,envoyfilters,appnetconfigs --all
 
 
 # under appnet root folder

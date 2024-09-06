@@ -54,6 +54,7 @@ build --action_env=CXXFLAGS=-Wnoerror=unused-private-field
 build:release --cxxopt -Wno-error=unused-but-set-variable
 build:debug --cxxopt -Wno-error=unused-but-set-variable
 build --cxxopt -Wformat-security
+build --cxxopt -O2
 
 # Link pthread for flatbuffers
 build --host_linkopt=-pthread
