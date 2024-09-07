@@ -21,7 +21,7 @@ docker push docker.io/appnetorg/proxyv2:1.22.3-distroless
 kubectl delete all,sa,pvc,pv,envoyfilters,appnetconfigs --all
 
 # All in one:
-# ./build.sh && sudo docker build -t docker.io/appnetorg/proxyv2:1.22.3-distroless -f Dockerfile.istioproxy . && docker push docker.io/appnetorg/proxyv2:1.22.3-distroless && kubectl delete all,sa,pvc,pv,envoyfilters,appnetconfigs --all
+# ./build.sh && docker build -t docker.io/appnetorg/proxyv2:1.22.3-distroless -f Dockerfile.istioproxy . && docker push docker.io/appnetorg/proxyv2:1.22.3-distroless && kubectl delete all,sa,pvc,pv,envoyfilters,appnetconfigs --all
 
 
 # under appnet root folder

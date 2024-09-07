@@ -19,6 +19,6 @@ GROUP_ID=$(id -g)
 rm -f ${ENVOY_ROOT}/envoy || true
 
 # echo the command
-echo "docker run -it -w /work -v ${ENVOY_ROOT}:/work --user ${USER_ID}:${GROUP_ID} gcr.io/istio-testing/build-tools-proxy:${RELEASE} /bin/bash -c \"git config --global --add safe.directory /work && export BAZEL_BUILD_ARGS='-c opt' && make build_envoy && cp /work/bazel-bin/envoy /work/envoy\""
+echo "docker run -it -w /work -v ${ENVOY_ROOT}:/work --user ${USER_ID}:${GROUP_ID} gcr.io/istio-testing/build-tools-proxy:${RELEASE} /bin/bash -c \"git config --global --add safe.directory /work && export BUILD_ENVOY_BINARY_ONLY=1 && make test_release && cp /work/bazel-bin/envoy /work/envoy\""
 
-docker run -it -w /work -v ${ENVOY_ROOT}:/work --user ${USER_ID}:${GROUP_ID} gcr.io/istio-testing/build-tools-proxy:${RELEASE} /bin/bash -c "git config --global --add safe.directory /work && export BAZEL_BUILD_ARGS='-c opt' && make build_envoy && cp /work/bazel-bin/envoy /work/envoy"
+docker run -it -w /work -v ${ENVOY_ROOT}:/work --user ${USER_ID}:${GROUP_ID} gcr.io/istio-testing/build-tools-proxy:${RELEASE} /bin/bash -c "git config --global --add safe.directory /work && export BUILD_ENVOY_BINARY_ONLY=1 && make test_release && cp /work/bazel-bin/envoy /work/envoy"
