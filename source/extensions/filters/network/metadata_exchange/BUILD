@@ -40,7 +40,6 @@ envoy_cc_library(
     repository = "@envoy",
     deps = [
         "//extensions/common:metadata_object_lib",
-        "//extensions/common:proto_util",
         "//source/extensions/common/workload_discovery:api_lib",
         "//source/extensions/filters/network/metadata_exchange/config:metadata_exchange_cc_proto",
         "@com_google_absl//absl/base:core_headers",
@@ -53,11 +52,12 @@ envoy_cc_library(
         "@envoy//envoy/stats:stats_macros",
         "@envoy//envoy/stream_info:filter_state_interface",
         "@envoy//source/common/http:utility_lib",
+        "@envoy//source/common/network:filter_state_dst_address_lib",
         "@envoy//source/common/network:utility_lib",
         "@envoy//source/common/protobuf",
         "@envoy//source/common/protobuf:utility_lib",
+        "@envoy//source/common/stream_info:bool_accessor_lib",
         "@envoy//source/extensions/filters/common/expr:cel_state_lib",
-        "@envoy//source/extensions/filters/network:well_known_names",
     ],
 )
 
@@ -88,6 +88,5 @@ envoy_cc_test(
         "@envoy//test/mocks/network:network_mocks",
         "@envoy//test/mocks/protobuf:protobuf_mocks",
         "@envoy//test/mocks/server:server_factory_context_mocks",
-        "@envoy//test/test_common:wasm_lib",
     ],
 )

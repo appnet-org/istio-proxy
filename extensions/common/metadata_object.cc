@@ -14,25 +14,26 @@
 
 #include "extensions/common/metadata_object.h"
 
-#include "absl/strings/str_join.h"
-#include "flatbuffers/flatbuffers.h"
-#include "extensions/common/node_info_bfbs_generated.h"
+#include "envoy/registry/registry.h"
 #include "source/common/common/hash.h"
+#include "source/common/protobuf/utility.h"
+
+#include "absl/strings/str_join.h"
 
 namespace Istio {
 namespace Common {
 
+namespace {
 static absl::flat_hash_map<absl::string_view, BaggageToken> ALL_BAGGAGE_TOKENS = {
     {NamespaceNameToken, BaggageToken::NamespaceName},
     {ClusterNameToken, BaggageToken::ClusterName},
     {ServiceNameToken, BaggageToken::ServiceName},
     {ServiceVersionToken, BaggageToken::ServiceVersion},
-    {PodNameToken, BaggageToken::PodName},
-    {DeploymentNameToken, BaggageToken::DeploymentName},
-    {JobNameToken, BaggageToken::JobName},
-    {CronJobNameToken, BaggageToken::CronJobName},
     {AppNameToken, BaggageToken::AppName},
     {AppVersionToken, BaggageToken::AppVersion},
+    {WorkloadNameToken, BaggageToken::WorkloadName},
+    {WorkloadTypeToken, BaggageToken::WorkloadType},
+    {InstanceNameToken, BaggageToken::InstanceName},
 };
 
 static absl::flat_hash_map<absl::string_view, WorkloadType> ALL_WORKLOAD_TOKENS = {
@@ -42,9 +43,283 @@ static absl::flat_hash_map<absl::string_view, WorkloadType> ALL_WORKLOAD_TOKENS 
     {CronJobSuffix, WorkloadType::CronJob},
 };
 
-WorkloadMetadataObject WorkloadMetadataObject::fromBaggage(absl::string_view baggage_header_value) {
-  // TODO: check for well-formed-ness of the baggage string: duplication,
-  // inconsistency
+absl::optional<absl::string_view> toSuffix(WorkloadType workload_type) {
+  switch (workload_type) {
+  case WorkloadType::Deployment:
+    return DeploymentSuffix;
+  case WorkloadType::CronJob:
+    return CronJobSuffix;
+  case WorkloadType::Job:
+    return JobSuffix;
+  case WorkloadType::Pod:
+    return PodSuffix;
+  case WorkloadType::Unknown:
+    return {};
+  }
+}
+
+} // namespace
+
+Envoy::ProtobufTypes::MessagePtr WorkloadMetadataObject::serializeAsProto() const {
+  auto message = std::make_unique<Envoy::ProtobufWkt::Struct>();
+  const auto suffix = toSuffix(workload_type_);
+  if (suffix) {
+    (*message->mutable_fields())[WorkloadTypeToken].set_string_value(*suffix);
+  }
+  if (!workload_name_.empty()) {
+    (*message->mutable_fields())[WorkloadNameToken].set_string_value(workload_name_);
+  }
+  if (!cluster_name_.empty()) {
+    (*message->mutable_fields())[InstanceNameToken].set_string_value(instance_name_);
+  }
+  if (!cluster_name_.empty()) {
+    (*message->mutable_fields())[ClusterNameToken].set_string_value(cluster_name_);
+  }
+  if (!namespace_name_.empty()) {
+    (*message->mutable_fields())[NamespaceNameToken].set_string_value(namespace_name_);
+  }
+  if (!canonical_name_.empty()) {
+    (*message->mutable_fields())[ServiceNameToken].set_string_value(canonical_name_);
+  }
+  if (!canonical_revision_.empty()) {
+    (*message->mutable_fields())[ServiceVersionToken].set_string_value(canonical_revision_);
+  }
+  if (!app_name_.empty()) {
+    (*message->mutable_fields())[AppNameToken].set_string_value(app_name_);
+  }
+  if (!app_version_.empty()) {
+    (*message->mutable_fields())[AppVersionToken].set_string_value(app_version_);
+  }
+  if (!identity_.empty()) {
+    (*message->mutable_fields())[IdentityToken].set_string_value(identity_);
+  }
+
+  if (!labels_.empty()) {
+    auto* labels = (*message->mutable_fields())[LabelsToken].mutable_struct_value();
+    for (const auto& l : labels_) {
+      (*labels->mutable_fields())[std::string(l.first)].set_string_value(std::string(l.second));
+    }
+  }
+
+  return message;
+}
+
+std::vector<std::pair<absl::string_view, absl::string_view>>
+WorkloadMetadataObject::serializeAsPairs() const {
+  std::vector<std::pair<absl::string_view, absl::string_view>> parts;
+  const auto suffix = toSuffix(workload_type_);
+  if (suffix) {
+    parts.push_back({WorkloadTypeToken, *suffix});
+  }
+  if (!workload_name_.empty()) {
+    parts.push_back({WorkloadNameToken, workload_name_});
+  }
+  if (!instance_name_.empty()) {
+    parts.push_back({InstanceNameToken, instance_name_});
+  }
+  if (!cluster_name_.empty()) {
+    parts.push_back({ClusterNameToken, cluster_name_});
+  }
+  if (!namespace_name_.empty()) {
+    parts.push_back({NamespaceNameToken, namespace_name_});
+  }
+  if (!canonical_name_.empty()) {
+    parts.push_back({ServiceNameToken, canonical_name_});
+  }
+  if (!canonical_revision_.empty()) {
+    parts.push_back({ServiceVersionToken, canonical_revision_});
+  }
+  if (!app_name_.empty()) {
+    parts.push_back({AppNameToken, app_name_});
+  }
+  if (!app_version_.empty()) {
+    parts.push_back({AppVersionToken, app_version_});
+  }
+  if (!labels_.empty()) {
+    for (const auto& l : labels_) {
+      parts.push_back({absl::StrCat("labels[]", l.first), absl::string_view(l.second)});
+    }
+  }
+  return parts;
+}
+
+absl::optional<std::string> WorkloadMetadataObject::serializeAsString() const {
+  const auto parts = serializeAsPairs();
+  return absl::StrJoin(parts, ",", absl::PairFormatter("="));
+}
+
+absl::optional<uint64_t> WorkloadMetadataObject::hash() const {
+  return Envoy::HashUtil::xxHash64(*serializeAsString());
+}
+
+absl::optional<std::string> WorkloadMetadataObject::owner() const {
+  const auto suffix = toSuffix(workload_type_);
+  if (suffix) {
+    return absl::StrCat(OwnerPrefix, namespace_name_, "/", *suffix, "s/", workload_name_);
+  }
+  return {};
+}
+
+WorkloadType fromSuffix(absl::string_view suffix) {
+  const auto it = ALL_WORKLOAD_TOKENS.find(suffix);
+  if (it != ALL_WORKLOAD_TOKENS.end()) {
+    return it->second;
+  }
+  return WorkloadType::Unknown;
+}
+
+WorkloadType parseOwner(absl::string_view owner, absl::string_view workload) {
+  // Strip "s/workload_name" and check for workload type.
+  if (owner.size() > workload.size() + 2) {
+    owner.remove_suffix(workload.size() + 2);
+    size_t last = owner.rfind('/');
+    if (last != absl::string_view::npos) {
+      return fromSuffix(owner.substr(last + 1));
+    }
+  }
+  return WorkloadType::Unknown;
+}
+
+google::protobuf::Struct convertWorkloadMetadataToStruct(const WorkloadMetadataObject& obj) {
+  google::protobuf::Struct metadata;
+  if (!obj.instance_name_.empty()) {
+    (*metadata.mutable_fields())[InstanceMetadataField].set_string_value(obj.instance_name_);
+  }
+  if (!obj.namespace_name_.empty()) {
+    (*metadata.mutable_fields())[NamespaceMetadataField].set_string_value(obj.namespace_name_);
+  }
+  if (!obj.workload_name_.empty()) {
+    (*metadata.mutable_fields())[WorkloadMetadataField].set_string_value(obj.workload_name_);
+  }
+  if (!obj.cluster_name_.empty()) {
+    (*metadata.mutable_fields())[ClusterMetadataField].set_string_value(obj.cluster_name_);
+  }
+  auto* labels = (*metadata.mutable_fields())[LabelsMetadataField].mutable_struct_value();
+  if (!obj.canonical_name_.empty()) {
+    (*labels->mutable_fields())[CanonicalNameLabel].set_string_value(obj.canonical_name_);
+  }
+  if (!obj.canonical_revision_.empty()) {
+    (*labels->mutable_fields())[CanonicalRevisionLabel].set_string_value(obj.canonical_revision_);
+  }
+  if (!obj.app_name_.empty()) {
+    (*labels->mutable_fields())[AppNameLabel].set_string_value(obj.app_name_);
+  }
+  if (!obj.app_version_.empty()) {
+    (*labels->mutable_fields())[AppVersionLabel].set_string_value(obj.app_version_);
+  }
+  if (!obj.getLabels().empty()) {
+    for (const auto& lbl : obj.getLabels()) {
+      (*labels->mutable_fields())[std::string(lbl.first)].set_string_value(std::string(lbl.second));
+    }
+  }
+  if (const auto owner = obj.owner(); owner.has_value()) {
+    (*metadata.mutable_fields())[OwnerMetadataField].set_string_value(*owner);
+  }
+  return metadata;
+}
+
+// Convert struct to a metadata object.
+std::unique_ptr<WorkloadMetadataObject>
+convertStructToWorkloadMetadata(const google::protobuf::Struct& metadata) {
+  return convertStructToWorkloadMetadata(metadata, {});
+}
+
+std::unique_ptr<WorkloadMetadataObject>
+convertStructToWorkloadMetadata(const google::protobuf::Struct& metadata,
+                                const absl::flat_hash_set<std::string>& additional_labels) {
+  absl::string_view instance, namespace_name, owner, workload, cluster, canonical_name,
+      canonical_revision, app_name, app_version;
+  std::vector<std::pair<std::string, std::string>> labels;
+  for (const auto& it : metadata.fields()) {
+    if (it.first == InstanceMetadataField) {
+      instance = it.second.string_value();
+    } else if (it.first == NamespaceMetadataField) {
+      namespace_name = it.second.string_value();
+    } else if (it.first == OwnerMetadataField) {
+      owner = it.second.string_value();
+    } else if (it.first == WorkloadMetadataField) {
+      workload = it.second.string_value();
+    } else if (it.first == ClusterMetadataField) {
+      cluster = it.second.string_value();
+    } else if (it.first == LabelsMetadataField) {
+      for (const auto& labels_it : it.second.struct_value().fields()) {
+        if (labels_it.first == CanonicalNameLabel) {
+          canonical_name = labels_it.second.string_value();
+        } else if (labels_it.first == CanonicalRevisionLabel) {
+          canonical_revision = labels_it.second.string_value();
+        } else if (labels_it.first == AppNameLabel) {
+          app_name = labels_it.second.string_value();
+        } else if (labels_it.first == AppVersionLabel) {
+          app_version = labels_it.second.string_value();
+        } else if (!additional_labels.empty() &&
+                   additional_labels.contains(std::string(labels_it.first))) {
+          labels.push_back(
+              {std::string(labels_it.first), std::string(labels_it.second.string_value())});
+        }
+      }
+    }
+  }
+  auto obj = std::make_unique<WorkloadMetadataObject>(instance, cluster, namespace_name, workload,
+                                                      canonical_name, canonical_revision, app_name,
+                                                      app_version, parseOwner(owner, workload), "");
+  obj->setLabels(labels);
+  return obj;
+}
+
+absl::optional<WorkloadMetadataObject>
+convertEndpointMetadata(const std::string& endpoint_encoding) {
+  std::vector<absl::string_view> parts = absl::StrSplit(endpoint_encoding, ';');
+  if (parts.size() < 5) {
+    return {};
+  }
+  return absl::make_optional<WorkloadMetadataObject>("", parts[4], parts[1], parts[0], parts[2],
+                                                     parts[3], "", "", WorkloadType::Unknown, "");
+}
+
+std::string serializeToStringDeterministic(const google::protobuf::Struct& metadata) {
+  std::string out;
+  {
+    google::protobuf::io::StringOutputStream md(&out);
+    google::protobuf::io::CodedOutputStream mcs(&md);
+    mcs.SetSerializationDeterministic(true);
+    if (!metadata.SerializeToCodedStream(&mcs)) {
+      out.clear();
+    }
+  }
+  return out;
+}
+
+WorkloadMetadataObject::FieldType
+WorkloadMetadataObject::getField(absl::string_view field_name) const {
+  const auto it = ALL_BAGGAGE_TOKENS.find(field_name);
+  if (it != ALL_BAGGAGE_TOKENS.end()) {
+    switch (it->second) {
+    case BaggageToken::NamespaceName:
+      return namespace_name_;
+    case BaggageToken::ClusterName:
+      return cluster_name_;
+    case BaggageToken::ServiceName:
+      return canonical_name_;
+    case BaggageToken::ServiceVersion:
+      return canonical_revision_;
+    case BaggageToken::AppName:
+      return app_name_;
+    case BaggageToken::AppVersion:
+      return app_version_;
+    case BaggageToken::WorkloadName:
+      return workload_name_;
+    case BaggageToken::WorkloadType:
+      if (const auto value = toSuffix(workload_type_); value.has_value()) {
+        return *value;
+      }
+    case BaggageToken::InstanceName:
+      return instance_name_;
+    }
+  }
+  return {};
+}
+
+std::unique_ptr<WorkloadMetadataObject> convertBaggageToWorkloadMetadata(absl::string_view data) {
   absl::string_view instance;
   absl::string_view cluster;
   absl::string_view workload;
@@ -53,11 +328,10 @@ WorkloadMetadataObject WorkloadMetadataObject::fromBaggage(absl::string_view bag
   absl::string_view canonical_revision;
   absl::string_view app_name;
   absl::string_view app_version;
-  WorkloadType workload_type = WorkloadType::Pod;
-
-  std::vector<absl::string_view> properties = absl::StrSplit(baggage_header_value, ',');
+  WorkloadType workload_type = WorkloadType::Unknown;
+  std::vector<absl::string_view> properties = absl::StrSplit(data, ',');
   for (absl::string_view property : properties) {
-    std::pair<absl::string_view, absl::string_view> parts = absl::StrSplit(property, "=");
+    std::pair<absl::string_view, absl::string_view> parts = absl::StrSplit(property, '=');
     const auto it = ALL_BAGGAGE_TOKENS.find(parts.first);
     if (it != ALL_BAGGAGE_TOKENS.end()) {
       switch (it->second) {
@@ -73,249 +347,27 @@ WorkloadMetadataObject WorkloadMetadataObject::fromBaggage(absl::string_view bag
       case BaggageToken::ServiceVersion:
         canonical_revision = parts.second;
         break;
-      case BaggageToken::PodName:
-        workload_type = WorkloadType::Pod;
-        instance = parts.second;
-        workload = parts.second;
-        break;
-      case BaggageToken::DeploymentName:
-        workload_type = WorkloadType::Deployment;
-        workload = parts.second;
-        break;
-      case BaggageToken::JobName:
-        workload_type = WorkloadType::Job;
-        instance = parts.second;
-        workload = parts.second;
-        break;
-      case BaggageToken::CronJobName:
-        workload_type = WorkloadType::CronJob;
-        workload = parts.second;
-        break;
       case BaggageToken::AppName:
         app_name = parts.second;
         break;
       case BaggageToken::AppVersion:
         app_version = parts.second;
         break;
+      case BaggageToken::WorkloadName:
+        workload = parts.second;
+        break;
+      case BaggageToken::WorkloadType:
+        workload_type = fromSuffix(parts.second);
+        break;
+      case BaggageToken::InstanceName:
+        instance = parts.second;
+        break;
       }
     }
   }
-  return WorkloadMetadataObject(instance, cluster, namespace_name, workload, canonical_name,
-                                canonical_revision, app_name, app_version, workload_type, "");
-}
-
-std::string WorkloadMetadataObject::baggage() const {
-  absl::string_view workload_type = PodSuffix;
-  switch (workload_type_) {
-  case WorkloadType::Deployment:
-    workload_type = DeploymentSuffix;
-    break;
-  case WorkloadType::CronJob:
-    workload_type = CronJobSuffix;
-    break;
-  case WorkloadType::Job:
-    workload_type = JobSuffix;
-    break;
-  case WorkloadType::Pod:
-    workload_type = PodSuffix;
-    break;
-  default:
-    break;
-  }
-  std::vector<absl::string_view> parts;
-  parts.push_back("k8s.");
-  parts.push_back(workload_type);
-  parts.push_back(".name=");
-  parts.push_back(workload_name_);
-  if (!cluster_name_.empty()) {
-    parts.push_back(",");
-    parts.push_back(ClusterNameToken);
-    parts.push_back("=");
-    parts.push_back(cluster_name_);
-  }
-  if (!namespace_name_.empty()) {
-    parts.push_back(",");
-    parts.push_back(NamespaceNameToken);
-    parts.push_back("=");
-    parts.push_back(namespace_name_);
-  }
-  if (!canonical_name_.empty()) {
-    parts.push_back(",");
-    parts.push_back(ServiceNameToken);
-    parts.push_back("=");
-    parts.push_back(canonical_name_);
-  }
-  if (!canonical_revision_.empty()) {
-    parts.push_back(",");
-    parts.push_back(ServiceVersionToken);
-    parts.push_back("=");
-    parts.push_back(canonical_revision_);
-  }
-  if (!app_name_.empty()) {
-    parts.push_back(",");
-    parts.push_back(AppNameToken);
-    parts.push_back("=");
-    parts.push_back(app_name_);
-  }
-  if (!app_version_.empty()) {
-    parts.push_back(",");
-    parts.push_back(AppVersionToken);
-    parts.push_back("=");
-    parts.push_back(app_version_);
-  }
-  return absl::StrJoin(parts, "");
-}
-
-absl::optional<uint64_t> WorkloadMetadataObject::hash() const {
-  return Envoy::HashUtil::xxHash64(absl::StrCat(instance_name_, "/", namespace_name_));
-}
-
-namespace {
-// Returns a string view stored in a flatbuffers string.
-absl::string_view toAbslStringView(const flatbuffers::String* str) {
-  return str ? absl::string_view(str->c_str(), str->size()) : absl::string_view();
-}
-
-std::string_view toStdStringView(absl::string_view view) {
-  return std::string_view(view.data(), view.size());
-}
-} // namespace
-
-std::string convertWorkloadMetadataToFlatNode(const WorkloadMetadataObject& obj) {
-  flatbuffers::FlatBufferBuilder fbb;
-
-  flatbuffers::Offset<flatbuffers::String> name, cluster, namespace_, workload_name, owner,
-      identity;
-  std::vector<flatbuffers::Offset<Wasm::Common::KeyVal>> labels;
-
-  name = fbb.CreateString(toStdStringView(obj.instance_name_));
-  namespace_ = fbb.CreateString(toStdStringView(obj.namespace_name_));
-  cluster = fbb.CreateString(toStdStringView(obj.cluster_name_));
-  workload_name = fbb.CreateString(toStdStringView(obj.workload_name_));
-  identity = fbb.CreateString(toStdStringView(obj.identity_));
-
-  switch (obj.workload_type_) {
-  case WorkloadType::Deployment:
-    owner = fbb.CreateString(absl::StrCat(OwnerPrefix, obj.namespace_name_, "/", DeploymentSuffix,
-                                          "s/", obj.workload_name_));
-    break;
-  case WorkloadType::Job:
-    owner = fbb.CreateString(
-        absl::StrCat(OwnerPrefix, obj.namespace_name_, "/", JobSuffix, "s/", obj.workload_name_));
-    break;
-  case WorkloadType::CronJob:
-    owner = fbb.CreateString(absl::StrCat(OwnerPrefix, obj.namespace_name_, "/", CronJobSuffix,
-                                          "s/", obj.workload_name_));
-    break;
-  case WorkloadType::Pod:
-    owner = fbb.CreateString(
-        absl::StrCat(OwnerPrefix, obj.namespace_name_, "/", PodSuffix, "s/", obj.workload_name_));
-    break;
-  }
-
-  labels.push_back(
-      Wasm::Common::CreateKeyVal(fbb, fbb.CreateString(CanonicalNameLabel),
-                                 fbb.CreateString(toStdStringView(obj.canonical_name_))));
-  labels.push_back(
-      Wasm::Common::CreateKeyVal(fbb, fbb.CreateString(CanonicalRevisionLabel),
-                                 fbb.CreateString(toStdStringView(obj.canonical_revision_))));
-  labels.push_back(Wasm::Common::CreateKeyVal(fbb, fbb.CreateString(AppLabel),
-                                              fbb.CreateString(toStdStringView(obj.app_name_))));
-  labels.push_back(Wasm::Common::CreateKeyVal(fbb, fbb.CreateString(VersionLabel),
-                                              fbb.CreateString(toStdStringView(obj.app_version_))));
-
-  auto labels_offset = fbb.CreateVectorOfSortedTables(&labels);
-  Wasm::Common::FlatNodeBuilder node(fbb);
-  node.add_name(name);
-  node.add_cluster_id(cluster);
-  node.add_namespace_(namespace_);
-  node.add_workload_name(workload_name);
-  node.add_owner(owner);
-  node.add_labels(labels_offset);
-  node.add_identity(identity);
-  auto data = node.Finish();
-  fbb.Finish(data);
-  auto fb = fbb.Release();
-  return std::string(reinterpret_cast<const char*>(fb.data()), fb.size());
-}
-
-WorkloadMetadataObject convertFlatNodeToWorkloadMetadata(const Wasm::Common::FlatNode& node) {
-  const absl::string_view instance = toAbslStringView(node.name());
-  const absl::string_view cluster = toAbslStringView(node.cluster_id());
-  const absl::string_view workload = toAbslStringView(node.workload_name());
-  const absl::string_view namespace_name = toAbslStringView(node.namespace_());
-  const absl::string_view identity = toAbslStringView(node.identity());
-  const auto* labels = node.labels();
-
-  absl::string_view canonical_name;
-  absl::string_view canonical_revision;
-  absl::string_view app_name;
-  absl::string_view app_version;
-  if (labels) {
-    const auto* name_iter = labels->LookupByKey(CanonicalNameLabel);
-    const auto* name = name_iter ? name_iter->value() : nullptr;
-    canonical_name = toAbslStringView(name);
-
-    const auto* revision_iter = labels->LookupByKey(CanonicalRevisionLabel);
-    const auto* revision = revision_iter ? revision_iter->value() : nullptr;
-    canonical_revision = toAbslStringView(revision);
-
-    const auto* app_iter = labels->LookupByKey(AppLabel);
-    const auto* app = app_iter ? app_iter->value() : nullptr;
-    app_name = toAbslStringView(app);
-
-    const auto* version_iter = labels->LookupByKey(VersionLabel);
-    const auto* version = version_iter ? version_iter->value() : nullptr;
-    app_version = toAbslStringView(version);
-  }
-
-  WorkloadType workload_type = WorkloadType::Pod;
-  // Strip "s/workload_name" and check for workload type.
-  absl::string_view owner = toAbslStringView(node.owner());
-  if (owner.size() > workload.size() + 2) {
-    owner.remove_suffix(workload.size() + 2);
-    size_t last = owner.rfind('/');
-    if (last != absl::string_view::npos) {
-      const auto it = ALL_WORKLOAD_TOKENS.find(owner.substr(last + 1));
-      if (it != ALL_WORKLOAD_TOKENS.end()) {
-        switch (it->second) {
-        case WorkloadType::Deployment:
-          workload_type = WorkloadType::Deployment;
-          break;
-        case WorkloadType::CronJob:
-          workload_type = WorkloadType::CronJob;
-          break;
-        case WorkloadType::Job:
-          workload_type = WorkloadType::Job;
-          break;
-        case WorkloadType::Pod:
-          workload_type = WorkloadType::Pod;
-          break;
-        default:
-          break;
-        }
-      }
-    }
-  }
-
-  return WorkloadMetadataObject(instance, cluster, namespace_name, workload, canonical_name,
-                                canonical_revision, app_name, app_version, workload_type, identity);
-}
-
-absl::optional<WorkloadMetadataObject>
-convertEndpointMetadata(const std::string& endpoint_encoding) {
-  std::vector<absl::string_view> parts = absl::StrSplit(endpoint_encoding, ';');
-  if (parts.size() < 5) {
-    return {};
-  }
-  // TODO: we cannot determine workload type from the encoding.
-  return absl::make_optional<WorkloadMetadataObject>("", parts[4], parts[1], parts[0], parts[2],
-                                                     parts[3], "", "", WorkloadType::Pod, "");
-}
-
-std::string_view nodeInfoSchema() {
-  return std::string_view(reinterpret_cast<const char*>(Wasm::Common::FlatNodeBinarySchema::data()),
-                          Wasm::Common::FlatNodeBinarySchema::size());
+  return std::make_unique<WorkloadMetadataObject>(instance, cluster, namespace_name, workload,
+                                                  canonical_name, canonical_revision, app_name,
+                                                  app_version, workload_type, "");
 }
 
 } // namespace Common

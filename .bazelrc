@@ -56,9 +56,6 @@ build:debug --cxxopt -Wno-error=unused-but-set-variable
 build --cxxopt -Wformat-security
 build --cxxopt -O2
 
-# Link pthread for flatbuffers
-build --host_linkopt=-pthread
-
 build:clang --host_action_env=CC=
 build:clang --host_action_env=CXX=
 

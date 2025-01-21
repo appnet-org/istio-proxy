@@ -14,7 +14,6 @@
 
 #include "source/extensions/filters/http/peer_metadata/filter.h"
 
-#include "source/extensions/filters/common/expr/cel_state.h"
 #include "source/common/network/address_impl.h"
 #include "test/common/stream_info/test_util.h"
 #include "test/mocks/stream_info/mocks.h"
@@ -77,24 +76,26 @@ protected:
   }
   void checkNoPeer(bool downstream) {
     EXPECT_FALSE(stream_info_.filterState()->hasDataWithName(
-        downstream ? Istio::Common::WasmDownstreamPeerID : Istio::Common::WasmUpstreamPeerID));
-    EXPECT_FALSE(stream_info_.filterState()->hasDataWithName(
-        downstream ? Istio::Common::WasmDownstreamPeer : Istio::Common::WasmUpstreamPeer));
+        downstream ? Istio::Common::DownstreamPeer : Istio::Common::UpstreamPeer));
   }
   void checkPeerNamespace(bool downstream, const std::string& expected) {
-    EXPECT_TRUE(stream_info_.filterState()->hasDataWithName(
-        downstream ? Istio::Common::WasmDownstreamPeerID : Istio::Common::WasmUpstreamPeerID));
-    const auto* obj = stream_info_.filterState()->getDataReadOnly<Filters::Common::Expr::CelState>(
-        downstream ? Istio::Common::WasmDownstreamPeer : Istio::Common::WasmUpstreamPeer);
-    ASSERT_NE(nullptr, obj);
-    Protobuf::Arena arena;
-    auto map = obj->exprValue(&arena, false);
-    ASSERT_TRUE(map.IsMap());
-    auto value =
-        (*map.MapOrDie())[google::api::expr::runtime::CelValue::CreateStringView("namespace")];
-    ASSERT_TRUE(value.has_value());
-    EXPECT_EQ(expected, value.value().StringOrDie().value());
+    const auto* cel_state =
+        stream_info_.filterState()
+            ->getDataReadOnly<Envoy::Extensions::Filters::Common::Expr::CelState>(
+                downstream ? Istio::Common::DownstreamPeer : Istio::Common::UpstreamPeer);
+    ProtobufWkt::Struct obj;
+    ASSERT_TRUE(obj.ParseFromString(cel_state->value().data()));
+    EXPECT_EQ(expected, extractString(obj, "namespace"));
   }
+
+  absl::string_view extractString(const ProtobufWkt::Struct& metadata, absl::string_view key) {
+    const auto& it = metadata.fields().find(key);
+    if (it == metadata.fields().end()) {
+      return {};
+    }
+    return it->second.string_value();
+  }
+
   void checkShared(bool expected) {
     EXPECT_EQ(expected,
               stream_info_.filterState()->objectsSharedWithUpstreamConnection()->size() > 0);
@@ -132,8 +133,7 @@ TEST_F(PeerMetadataTest, DownstreamXDSNone) {
 
 TEST_F(PeerMetadataTest, DownstreamXDS) {
   const WorkloadMetadataObject pod("pod-foo-1234", "my-cluster", "default", "foo", "foo-service",
-                                   "v1alpha3", "foo-app", "v1", Istio::Common::WorkloadType::Pod,
-                                   "");
+                                   "v1alpha3", "", "", Istio::Common::WorkloadType::Pod, "");
   EXPECT_CALL(*metadata_provider_, GetMetadata(_))
       .WillRepeatedly(Invoke([&](const Network::Address::InstanceConstSharedPtr& address)
                                  -> std::optional<WorkloadMetadataObject> {
@@ -155,8 +155,7 @@ TEST_F(PeerMetadataTest, DownstreamXDS) {
 
 TEST_F(PeerMetadataTest, UpstreamXDS) {
   const WorkloadMetadataObject pod("pod-foo-1234", "my-cluster", "foo", "foo", "foo-service",
-                                   "v1alpha3", "foo-app", "v1", Istio::Common::WorkloadType::Pod,
-                                   "");
+                                   "v1alpha3", "", "", Istio::Common::WorkloadType::Pod, "");
   EXPECT_CALL(*metadata_provider_, GetMetadata(_))
       .WillRepeatedly(Invoke([&](const Network::Address::InstanceConstSharedPtr& address)
                                  -> std::optional<WorkloadMetadataObject> {
@@ -192,8 +191,7 @@ TEST_F(PeerMetadataTest, UpstreamXDSInternal) {
                             *host_metadata);
 
   const WorkloadMetadataObject pod("pod-foo-1234", "my-cluster", "foo", "foo", "foo-service",
-                                   "v1alpha3", "foo-app", "v1", Istio::Common::WorkloadType::Pod,
-                                   "");
+                                   "v1alpha3", "", "", Istio::Common::WorkloadType::Pod, "");
   EXPECT_CALL(*metadata_provider_, GetMetadata(_))
       .WillRepeatedly(Invoke([&](const Network::Address::InstanceConstSharedPtr& address)
                                  -> std::optional<WorkloadMetadataObject> {
@@ -262,8 +260,7 @@ TEST_F(PeerMetadataTest, DownstreamFallbackFirst) {
 
 TEST_F(PeerMetadataTest, DownstreamFallbackSecond) {
   const WorkloadMetadataObject pod("pod-foo-1234", "my-cluster", "default", "foo", "foo-service",
-                                   "v1alpha3", "foo-app", "v1", Istio::Common::WorkloadType::Pod,
-                                   "");
+                                   "v1alpha3", "", "", Istio::Common::WorkloadType::Pod, "");
   EXPECT_CALL(*metadata_provider_, GetMetadata(_))
       .WillRepeatedly(Invoke([&](const Network::Address::InstanceConstSharedPtr& address)
                                  -> std::optional<WorkloadMetadataObject> {
@@ -285,7 +282,8 @@ TEST_F(PeerMetadataTest, DownstreamFallbackSecond) {
 
 TEST(MXMethod, Cache) {
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
-  MXMethod method(true, context);
+  absl::flat_hash_set<std::string> additional_labels;
+  MXMethod method(true, additional_labels, context);
   NiceMock<StreamInfo::MockStreamInfo> stream_info;
   Http::TestRequestHeaderMapImpl request_headers;
   const int32_t max = 1000;
@@ -345,8 +343,7 @@ TEST_F(PeerMetadataTest, UpstreamFallbackFirst) {
 
 TEST_F(PeerMetadataTest, UpstreamFallbackSecond) {
   const WorkloadMetadataObject pod("pod-foo-1234", "my-cluster", "foo", "foo", "foo-service",
-                                   "v1alpha3", "foo-app", "v1", Istio::Common::WorkloadType::Pod,
-                                   "");
+                                   "v1alpha3", "", "", Istio::Common::WorkloadType::Pod, "");
   EXPECT_CALL(*metadata_provider_, GetMetadata(_))
       .WillRepeatedly(Invoke([&](const Network::Address::InstanceConstSharedPtr& address)
                                  -> std::optional<WorkloadMetadataObject> {
@@ -368,8 +365,7 @@ TEST_F(PeerMetadataTest, UpstreamFallbackSecond) {
 
 TEST_F(PeerMetadataTest, UpstreamFallbackFirstXDS) {
   const WorkloadMetadataObject pod("pod-foo-1234", "my-cluster", "foo", "foo", "foo-service",
-                                   "v1alpha3", "foo-app", "v1", Istio::Common::WorkloadType::Pod,
-                                   "");
+                                   "v1alpha3", "", "", Istio::Common::WorkloadType::Pod, "");
   EXPECT_CALL(*metadata_provider_, GetMetadata(_))
       .WillRepeatedly(Invoke([&](const Network::Address::InstanceConstSharedPtr& address)
                                  -> std::optional<WorkloadMetadataObject> {
@@ -395,6 +391,20 @@ TEST_F(PeerMetadataTest, DownstreamMXPropagation) {
   initialize(R"EOF(
     downstream_propagation:
       - istio_headers: {}
+  )EOF");
+  EXPECT_EQ(0, request_headers_.size());
+  EXPECT_EQ(0, response_headers_.size());
+  checkNoPeer(true);
+  checkNoPeer(false);
+}
+
+TEST_F(PeerMetadataTest, DownstreamMXPropagationWithAdditionalLabels) {
+  initialize(R"EOF(
+    downstream_propagation:
+      - istio_headers: {}
+    additional_labels:
+      - foo
+      - bar
   )EOF");
   EXPECT_EQ(0, request_headers_.size());
   EXPECT_EQ(0, response_headers_.size());
